@@ -1,55 +1,45 @@
-import os, requests
-from fastapi import FastAPI, HTTPException
+import os
+import requests
+from fastapi import FastAPI
 from pydantic import BaseModel
-from langchain.agents import Tool, initialize_agent, AgentType
-from langchain.chat_models import ChatOpenAI
+from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
+from langchain.agents import initialize_agent, Tool, AgentType
 
-# Read key
-with open('api_key.txt') as f:
-    OPENAI_API_KEY = f.read().strip()
-if not OPENAI_API_KEY:
-    raise ValueError("api_key.txt is empty")
+load_dotenv()
 
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+BACKEND_URL = os.getenv("BACKEND_URL")
+ML_URL = os.getenv("ML_URL")
+
+app = FastAPI()
 llm = ChatOpenAI(temperature=0, openai_api_key=OPENAI_API_KEY)
-BACKEND = os.getenv("BACKEND_URL", "http://backend:5000/api")
 
-class Req(BaseModel):
-    message: str
+def upload_csv_tool(file_path: str):
+    with open(file_path, "rb") as f:
+        files = {"file": f}
+        resp = requests.post(f"{BACKEND_URL}/upload", files=files)
+    return resp.json()
 
-upload_tool = Tool(
-    name="upload_csv",
-    description="Upload CSV; input is path",
-    func=lambda p: requests.post(f"{BACKEND}/upload", files={"file": open(p,"rb")}).json()
-)
-train_tool = Tool(
-    name="train_model",
-    description="Train: model_type, file_path, target_column, feature_columns",
-    func=lambda p: requests.post(
-        f"{BACKEND}/train/{p['model_type']}",
-        json={"filePath":p["file_path"],"targetColumn":p["target_column"],"featureColumns":p["feature_columns"]}
-    ).json()
-)
-predict_tool = Tool(
-    name="predict_model",
-    description="Predict: model_type, input_data",
-    func=lambda p: requests.post(
-        f"{BACKEND}/predict/{p['model_type']}",
-        json={"inputData":p["input_data"]}
-    ).json()
-)
+tools = [
+    Tool(
+        name="upload_csv",
+        func=upload_csv_tool,
+        description="Use this tool to upload a CSV and detect headers."
+    )
+]
 
 agent = initialize_agent(
-    [upload_tool, train_tool, predict_tool],
-    llm,
+    tools=tools,
+    llm=llm,
     agent=AgentType.CONVERSATIONAL_REACT_DESCRIPTION,
     verbose=True
 )
 
-app = FastAPI()
+class ChatRequest(BaseModel):
+    text: str
 
-@app.post("/agent/respond")
-async def respond(req: Req):
-    try:
-        return {"response": agent.run(req.message)}
-    except Exception as e:
-        raise HTTPException(500, detail=str(e))
+@app.post("/chat")
+def chat(req: ChatRequest):
+    result = agent.run(req.text)
+    return {"response": result}
