@@ -3,6 +3,5 @@ uvicorn
 pandas
 scikit-learn
 xgboost
-numpy
-joblib
 torch
+pydantic
