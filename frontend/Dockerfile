@@ -3,11 +3,11 @@ WORKDIR /app
 COPY package.json tailwind.config.js postcss.config.js tsconfig.json ./
 RUN npm install
 COPY public/ ./public/
-COPY src/ ./src/
+COPY src/    ./src/
 RUN npm run build
 
 FROM nginx:stable-alpine
 COPY --from=builder /app/build /usr/share/nginx/html
-COPY public/nginx.conf /etc/nginx/conf.d/default.conf
+COPY public/nginx.conf   /etc/nginx/conf.d/default.conf
 EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["nginx","-g","daemon off;"]
