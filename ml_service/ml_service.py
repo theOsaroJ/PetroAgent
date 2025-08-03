@@ -1,29 +1,36 @@
-from fastapi import FastAPI
-from trainers.xgboost_trainer import train_xgboost, predict_xgboost
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from trainers.neural_trainer import train_neural, predict_neural
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-@app.get("/")
-def health_check():
-    return {"status": "ml ok"}
+class TrainRequest(BaseModel):
+    data_path: str
+    epochs: int
 
-@app.post("/train/xgb")
-def train_xgb():
-    result = train_xgboost()
-    return result
+class PredictRequest(BaseModel):
+    model_path: str
+    input_data: list[float]
 
-@app.post("/predict/xgb")
-def predict_xgb():
-    result = predict_xgboost()
-    return result
+@app.post("/train")
+def train(req: TrainRequest):
+    try:
+        train_neural(req.data_path, epochs=req.epochs)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-@app.post("/train/neural")
-def train_neural_net():
-    result = train_neural()
-    return result
-
-@app.post("/predict/neural")
-def predict_neural_net():
-    result = predict_neural()
-    return result
+@app.post("/predict")
+def predict(req: PredictRequest):
+    try:
+        result = predict_neural(req.model_path, req.input_data)
+        return {"prediction": result}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
