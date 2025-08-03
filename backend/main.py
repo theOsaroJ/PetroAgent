@@ -1,20 +1,15 @@
-from fastapi import FastAPI, UploadFile, File
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI
 from pydantic import BaseModel
-import pandas as pd
 
 app = FastAPI()
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
-class Columns(BaseModel):
-    columns: list[str]
+class HelloRequest(BaseModel):
+    name: str
 
-@app.post("/api/upload", response_model=Columns)
-async def upload_file(file: UploadFile = File(...)):
-    df = pd.read_csv(file.file)
-    return Columns(columns=df.columns.tolist())
+@app.get("/")
+def root():
+    return {"message": "Backend up"}
+
+@app.post("/hello")
+def hello(req: HelloRequest):
+    return {"message": f"Hello, {req.name}!"}
