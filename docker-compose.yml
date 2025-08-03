@@ -1,0 +1,31 @@
+version: '3.8'
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./api_key.txt:/app/api_key.txt:ro
+    depends_on:
+      - ml_service
+
+  ml_service:
+    build: ./ml_service
+    ports:
+      - "8000:8000"
+
+  agent:
+    build: ./agent_service
+    ports:
+      - "7000:7000"
+    volumes:
+      - ./api_key.txt:/app/api_key.txt:ro
+    depends_on:
+      - backend
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    stdin_open: true
+    tty: true
