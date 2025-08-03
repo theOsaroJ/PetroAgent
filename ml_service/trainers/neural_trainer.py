@@ -1,29 +1,38 @@
-import torch, torch.nn as nn
-from torch.utils.data import TensorDataset, DataLoader
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import pandas as pd
 
-def train_neural(X, y, epochs=10):
-    X_t = torch.tensor(X.values, dtype=torch.float32)
-    y_t = torch.tensor(y.values, dtype=torch.float32).unsqueeze(1)
-    ds = TensorDataset(X_t, y_t)
-    loader = DataLoader(ds, batch_size=32, shuffle=True)
+model_neural = None
 
-    model = nn.Sequential(
-        nn.Linear(X_t.shape[1], 64),
-        nn.ReLU(),
-        nn.Linear(64, 1)
-    )
+class Net(nn.Module):
+    def __init__(self, input_dim):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, 64),
+            nn.ReLU(),
+            nn.Linear(64, 1)
+        )
+    def forward(self, x):
+        return self.net(x)
+
+def train_neural(df: pd.DataFrame, inputs, target):
+    global model_neural
+    X = torch.tensor(df[inputs].values, dtype=torch.float32)
+    y = torch.tensor(df[target].values, dtype=torch.float32).unsqueeze(1)
+    model = Net(len(inputs))
+    optimizer = optim.Adam(model.parameters(), lr=0.01)
     loss_fn = nn.MSELoss()
-    opt = torch.optim.Adam(model.parameters())
+    for _ in range(100):
+        optimizer.zero_grad()
+        out = model(X)
+        loss = loss_fn(out, y)
+        loss.backward()
+        optimizer.step()
+    model_neural = model
+    return model
 
-    history = []
-    for _ in range(epochs):
-        total = 0.0
-        for xb, yb in loader:
-            pred = model(xb)
-            loss = loss_fn(pred, yb)
-            opt.zero_grad()
-            loss.backward()
-            opt.step()
-            total += loss.item()
-        history.append(total / len(loader))
-    return history
+def predict_neural(df):
+    X = torch.tensor(df.values, dtype=torch.float32)
+    with torch.no_grad():
+        return model_neural(X).numpy().flatten()
