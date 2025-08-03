@@ -1,8 +1,18 @@
 from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.model_selection    import train_test_split
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
+import pandas as pd
 
-def train_gp(X, y):
-    X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.2)
-    gp = GaussianProcessRegressor()
-    gp.fit(X_tr, y_tr)
-    return gp, gp.score(X_te, y_te)
+model_gp = None
+
+def train_gp(df, inputs, target):
+    global model_gp
+    X = df[inputs].values
+    y = df[target].values
+    kernel = C(1.0, (1e-3,1e3)) * RBF(1.0, (1e-3,1e3))
+    model = GaussianProcessRegressor(kernel=kernel)
+    model.fit(X, y)
+    model_gp = model
+    return model
+
+def predict_gp(df):
+    return model_gp.predict(df.values)
