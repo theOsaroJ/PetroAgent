@@ -1,15 +1,27 @@
-version: '3.8'
+version: "3.9"
 services:
   backend:
     build: ./backend
-    ports: ['5000:5000']
+    ports:
+      - "5000:5000"
   ml_service:
     build: ./ml_service
-    ports: ['8000:8000']
+    ports:
+      - "8000:8000"
   agent:
     build: ./agent
-    volumes: ['./api_key.txt:/app/api_key.txt:ro']
-    ports: ['7000:7000']
+    ports:
+      - "7000:7000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
   frontend:
     build: ./frontend
-    ports: ['3000:80']
+    ports:
+      - "3000:80"
+    depends_on:
+      - agent
+      - backend
+
+# load API key from file
+env_file:
+  - api_key.txt
