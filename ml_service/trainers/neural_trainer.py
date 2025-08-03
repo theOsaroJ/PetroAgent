@@ -1,46 +1,45 @@
+import pandas as pd
 import torch
 import torch.nn as nn
-import torch.optim as optim
-from sklearn.datasets import load_iris
-import joblib
+from torch.utils.data import DataLoader, TensorDataset
 
-MODEL_PATH = "nn_model.pt"
+def train_neural(data_path: str, epochs: int = 10):
+    df = pd.read_csv(data_path)
+    X = df.iloc[:, :-1].values.astype(float)
+    y = df.iloc[:, -1].values.astype(float)
+    X_t = torch.tensor(X, dtype=torch.float32)
+    y_t = torch.tensor(y, dtype=torch.float32).unsqueeze(1)
+    ds = TensorDataset(X_t, y_t)
+    loader = DataLoader(ds, batch_size=32, shuffle=True)
 
-class SimpleNet(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim):
-        super().__init__()
-        self.fc1 = nn.Linear(input_dim, hidden_dim)
-        self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(hidden_dim, output_dim)
+    model = nn.Sequential(
+        nn.Linear(X.shape[1], 64),
+        nn.ReLU(),
+        nn.Linear(64, 1)
+    )
+    loss_fn = nn.MSELoss()
+    opt = torch.optim.Adam(model.parameters(), lr=1e-3)
 
-    def forward(self, x):
-        x = self.relu(self.fc1(x))
-        x = self.fc2(x)
-        return x
+    for _ in range(epochs):
+        for xb, yb in loader:
+            pred = model(xb)
+            loss = loss_fn(pred, yb)
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
 
-def train_neural():
-    data = load_iris(as_frame=True)
-    X = torch.tensor(data.data.values, dtype=torch.float32)
-    y = torch.tensor(data.target.values, dtype=torch.long)
-    model = SimpleNet(input_dim=4, hidden_dim=16, output_dim=3)
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.01)
-    for epoch in range(50):
-        optimizer.zero_grad()
-        outputs = model(X)
-        loss = criterion(outputs, y)
-        loss.backward()
-        optimizer.step()
-    torch.save(model.state_dict(), MODEL_PATH)
-    return {"message": "neural net trained", "model_path": MODEL_PATH}
+    torch.save(model.state_dict(), "model.pt")
 
-def predict_neural():
-    data = load_iris(as_frame=True)
-    sample = torch.tensor([5.1, 3.5, 1.4, 0.2], dtype=torch.float32)
-    model = SimpleNet(input_dim=4, hidden_dim=16, output_dim=3)
-    model.load_state_dict(torch.load(MODEL_PATH))
+def predict_neural(model_path: str, input_data: list[float]):
+    state = torch.load(model_path, map_location="cpu")
+    inp = torch.tensor(input_data, dtype=torch.float32).unsqueeze(0)
+    model = nn.Sequential(
+        nn.Linear(len(input_data), 64),
+        nn.ReLU(),
+        nn.Linear(64, 1)
+    )
+    model.load_state_dict(state)
     model.eval()
     with torch.no_grad():
-        logits = model(sample)
-        pred = int(torch.argmax(logits).item())
-    return {"prediction": pred}
+        out = model(inp)
+    return out.item()
