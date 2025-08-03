@@ -1,18 +1,20 @@
 from fastapi import FastAPI, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 import pandas as pd
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-@app.get("/")
-def health_check():
-    return {"status": "ok"}
+class Columns(BaseModel):
+    columns: list[str]
 
-@app.post("/upload")
-async def upload_csv(file: UploadFile = File(...)):
-    # Read first 100 rows to detect headers & preview
-    df = pd.read_csv(file.file, nrows=100)
-    return {
-        "filename": file.filename,
-        "headers": list(df.columns),
-        "preview": df.head(5).to_dict(orient="records")
-    }
+@app.post("/api/upload", response_model=Columns)
+async def upload_file(file: UploadFile = File(...)):
+    df = pd.read_csv(file.file)
+    return Columns(columns=df.columns.tolist())
