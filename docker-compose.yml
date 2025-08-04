@@ -1,35 +1,27 @@
 version: "3.8"
 services:
-  backend:
-    build: ./backend
-    volumes:
-      - ./api_key.txt:/app/api_key.txt:ro
-    ports:
-      - "5000:5000"
-
-  ml_service:
-    build: ./ml_service
-    volumes:
-      - ./api_key.txt:/app/api_key.txt:ro
-    ports:
-      - "8000:8000"
 
   agent:
-    build: ./agent
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
     volumes:
       - ./api_key.txt:/app/api_key.txt:ro
-    environment:
-      - BACKEND_URL=http://backend:5000
-      - ML_SERVICE_URL=http://ml_service:8000
-      - OPENAI_API_KEY_FILE=/app/api_key.txt
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./plots:/app/plots
     ports:
       - "7000:7000"
+    environment:
+      - TZ=UTC
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     depends_on:
-      - backend
-      - ml_service
       - agent
     ports:
       - "3000:80"
+    environment:
+      - NODE_ENV=production
