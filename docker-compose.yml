@@ -1,27 +1,32 @@
 version: "3.8"
 services:
+  backend:
+    build: ./backend
+    container_name: petroagent_backend
+    ports:
+      - "5000:5000"
+    env_file:
+      - api_key.txt
+
+  ml_service:
+    build: ./ml_service
+    container_name: petroagent_ml_service
+    ports:
+      - "8000:8000"
 
   agent:
-    build:
-      context: .
-      dockerfile: Dockerfile.agent
-    volumes:
-      - ./api_key.txt:/app/api_key.txt:ro
-      - ./data:/app/data
-      - ./models:/app/models
-      - ./plots:/app/plots
+    build: ./agent
+    container_name: petroagent_agent
     ports:
       - "7000:7000"
-    environment:
-      - TZ=UTC
+    depends_on:
+      - backend
+      - ml_service
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    depends_on:
-      - agent
+    build: ./frontend
+    container_name: petroagent_frontend
     ports:
       - "3000:80"
-    environment:
-      - NODE_ENV=production
+    depends_on:
+      - agent
