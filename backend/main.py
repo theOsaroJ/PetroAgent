@@ -1,23 +1,15 @@
-from fastapi import FastAPI, File, UploadFile, Form
-import pandas as pd
-from sklearn.gaussian_process import GaussianProcessRegressor
+from fastapi import FastAPI
+from pydantic import BaseModel
 
-app = FastAPI()
+app = FastAPI(title="PetroAgent Backend")
 
-@app.get("/api/health")
+class Ping(BaseModel):
+    msg: str
+
+@app.get("/health")
 def health():
     return {"status": "ok"}
 
-@app.post("/api/upload")
-async def upload(file: UploadFile = File(...)):
-    df = pd.read_csv(file.file)
-    return {"columns": list(df.columns)}
-
-@app.post("/api/train")
-async def train(
-    model: str = Form(...),
-    features: str = Form(...),
-    target: str = Form(...),
-):
-    # VERY basic stub: replace with actual training logic or delegate to ml_service
-    return {"status": "trained", "model": model}
+@app.post("/ping")
+def ping(p: Ping):
+    return {"echo": p.msg}
