@@ -1,32 +1,40 @@
 version: "3.8"
 services:
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     container_name: petroagent_backend
     ports:
       - "5000:5000"
-    env_file:
-      - api_key.txt
 
   ml_service:
-    build: ./ml_service
+    build:
+      context: ./ml_service
+      dockerfile: Dockerfile
     container_name: petroagent_ml_service
     ports:
       - "8000:8000"
 
   agent:
-    build: ./agent
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
     container_name: petroagent_agent
+    environment:
+      - OPENAI_API_KEY_FILE=/app/api_key.txt
+    volumes:
+      - ./api_key.txt:/app/api_key.txt:ro
     ports:
       - "7000:7000"
-    depends_on:
-      - backend
-      - ml_service
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     container_name: petroagent_frontend
     ports:
       - "3000:80"
     depends_on:
+      - backend
       - agent
