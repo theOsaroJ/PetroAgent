@@ -1,8 +1,6 @@
 fastapi
 uvicorn
-langchain-openai
+pydantic
 openai
-httpx
 python-dotenv
-requests
-tiktoken
+httpx
