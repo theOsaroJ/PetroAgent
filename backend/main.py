@@ -1,15 +1,13 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
+from fastapi import FastAPI, UploadFile, File
+import pandas as pd
 
-app = FastAPI(title="PetroAgent Backend")
+app = FastAPI()
 
-class Ping(BaseModel):
-    msg: str
-
-@app.get("/health")
-def health():
-    return {"status": "ok"}
-
-@app.post("/ping")
-def ping(p: Ping):
-    return {"echo": p.msg}
+@app.post("/upload")
+async def upload(file: UploadFile = File(...)):
+    df = pd.read_csv(file.file)
+    # return first 5 rows and headers
+    return {
+        "columns": df.columns.tolist(),
+        "preview": df.head(5).to_dict(orient="records")
+    }
