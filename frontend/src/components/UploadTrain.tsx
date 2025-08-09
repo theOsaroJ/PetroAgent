@@ -1,107 +1,123 @@
 import React, { useState } from "react";
-import { uploadCSV, trainModel, generatePlots } from "../api";
+import { uploadCSV, trainModel, TrainPayload } from "../lib/api";
+import { Database, PlayCircle } from "lucide-react";
 
-export default function UploadTrain({
-  models, columns, onUploaded, onPlots
-}: {
-  models: string[], columns: string[],
-  onUploaded: (v: {file_id?: string, path?: string}) => void,
-  onPlots: (imgs: Record<string,string>) => void
-}) {
-  const [file, setFile] = useState<File | null>(null);
-  const [features, setFeatures] = useState("");
+export default function UploadTrain({ onArtifacts }: { onArtifacts: (paths: string[])=>void }) {
+  const [schema, setSchema] = useState<null | Awaited<ReturnType<typeof uploadCSV>>>(null);
   const [target, setTarget] = useState("");
-  const [model, setModel] = useState(models?.[0] || "NeuralNet");
-  const [savePath, setSavePath] = useState("/app/artifacts/petro_model.pkl");
-  const [training, setTraining] = useState(false);
-  const [metrics, setMetrics] = useState<any>(null);
-  const [fileInfo, setFileInfo] = useState<{file_id?: string, path?: string} | null>(null);
+  const [features, setFeatures] = useState<string[]>([]);
+  const [task, setTask] = useState<"regression"|"classification">("regression");
+  const [modelType, setModelType] = useState<"rf"|"gp"|"xgb"|"nn"|"transformer">("xgb");
+  const [outputDir, setOutputDir] = useState("run1");
+  const [status, setStatus] = useState("");
 
-  const doUpload = async () => {
-    if (!file) return alert("Choose a CSV file");
-    const info = await uploadCSV(file);
-    setFileInfo(info);
-    onUploaded(info);
-  };
-
-  const doPlots = async () => {
-    if (!fileInfo) return alert("Upload a CSV first");
-    const imgs = await generatePlots({
-      file_id: fileInfo.file_id, path: fileInfo.path,
-      features: features.split(",").map(s=>s.trim()).filter(Boolean),
-      target: target.trim(),
-    });
-    onPlots(imgs);
-  };
-
-  const doTrain = async () => {
-    if (!fileInfo) return alert("Upload a CSV first");
-    const feats = features.split(",").map(s=>s.trim()).filter(Boolean);
-    const tgt = target.trim();
-    if (!feats.length || !tgt) return alert("Provide features and target");
-    setTraining(true); setMetrics(null);
+  async function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if(!f) return;
+    setStatus("Uploading…");
     try {
-      const res = await trainModel({
-        file_id: fileInfo.file_id, path: fileInfo.path,
-        features: feats, target: tgt, model, save_path: savePath
-      });
-      setMetrics(res.metrics);
-      alert(`Saved model → ${res.save_path}`);
-    } catch (e:any) {
-      alert(`Training error: ${e?.message || e}`);
-    } finally {
-      setTraining(false);
+      const s = await uploadCSV(f);
+      setSchema(s);
+      setStatus(`Uploaded ${s.n_rows} rows × ${s.n_cols} cols. Choose target & features.`);
+    } catch(e:any) {
+      setStatus("Upload failed.");
     }
-  };
+  }
+
+  function toggleFeature(c: string) {
+    setFeatures(prev => prev.includes(c) ? prev.filter(x=>x!==c) : [...prev, c]);
+  }
+
+  async function train() {
+    if(!schema || !target || features.length===0) { setStatus("Select target and at least one feature."); return; }
+    const payload: TrainPayload = {
+      upload_id: schema.upload_id,
+      target, features, task,
+      model_type: modelType,
+      output_dir: outputDir || "run1",
+      standardize: true,
+      max_rows: modelType==="gp" ? 5000 : null
+    };
+    setStatus("Training… this can take a bit.");
+    try {
+      const res = await trainModel(payload);
+      setStatus(`Done. Metrics: ${Object.entries(res.metrics).map(([k,v])=>`${k}=${v.toFixed(4)}`).join(" | ")}. Model saved at ${res.model_path}`);
+      onArtifacts(res.artifacts);
+    } catch(e:any) {
+      setStatus("Training failed.");
+    }
+  }
 
   return (
-    <div className="bg-white rounded-2xl shadow-lg p-4 space-y-4">
-      <h2 className="text-xl font-semibold">Upload & Train</h2>
-
-      <div className="flex items-center gap-3">
-        <input type="file" accept=".csv" onChange={e=>setFile(e.target.files?.[0] || null)} />
-        <button className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-xl"
-          onClick={doUpload}>Upload</button>
-      </div>
-
-      <div className="grid sm:grid-cols-2 gap-3">
+    <div className="glass p-4 h-full flex flex-col">
+      <div className="flex items-center gap-3 mb-3">
+        <Database className="text-petro-accent"/>
         <div>
-          <label className="block text-sm text-slate-600">Features (comma-separated)</label>
-          <input className="w-full border rounded-lg px-3 py-2" placeholder="GR, RHOB, NPHI, ..." value={features} onChange={e=>setFeatures(e.target.value)} />
-          {!!columns.length && <div className="text-[11px] text-slate-500 mt-1">Columns: {columns.join(", ")}</div>}
-        </div>
-        <div>
-          <label className="block text-sm text-slate-600">Target</label>
-          <input className="w-full border rounded-lg px-3 py-2" placeholder="ROP" value={target} onChange={e=>setTarget(e.target.value)} />
+          <div className="text-petro-text font-semibold text-lg">Data & Training</div>
+          <div className="text-petro-muted text-xs">Upload CSV → pick target & features → choose model → train</div>
         </div>
       </div>
 
-      <div className="grid sm:grid-cols-3 gap-3 items-end">
-        <div>
-          <label className="block text-sm text-slate-600">Model</label>
-          <select className="w-full border rounded-lg px-3 py-2" value={model} onChange={e=>setModel(e.target.value)}>
-            {models.map(m => <option key={m} value={m}>{m}</option>)}
-          </select>
-        </div>
-        <div className="sm:col-span-2">
-          <label className="block text-sm text-slate-600">Save to path</label>
-          <input className="w-full border rounded-lg px-3 py-2" value={savePath} onChange={e=>setSavePath(e.target.value)} />
-        </div>
-      </div>
+      <div className="space-y-3">
+        <input type="file" accept=".csv" onChange={onUpload} className="text-petro-text"/>
+        {schema && (
+          <div className="space-y-2">
+            <div className="badge">Rows: {schema.n_rows} · Cols: {schema.n_cols}</div>
 
-      <div className="flex gap-3">
-        <button className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl disabled:opacity-60"
-          disabled={training} onClick={doTrain}>{training ? "Training..." : "Train"}</button>
-        <button className="bg-slate-700 hover:bg-slate-800 text-white px-4 py-2 rounded-xl"
-          onClick={doPlots}>Generate Plots</button>
-      </div>
+            <div>
+              <div className="text-petro-muted text-sm mb-1">Target column</div>
+              <select className="input" value={target} onChange={e=>setTarget(e.target.value)}>
+                <option value="">Select target…</option>
+                {schema.columns.map(c=><option key={c} value={c}>{c} ({schema.dtypes[c]})</option>)}
+              </select>
+            </div>
 
-      {metrics && (
-        <div className="text-sm text-slate-700">
-          <div className="font-semibold">Metrics</div>
-          <pre className="bg-slate-50 border rounded-lg p-2">{JSON.stringify(metrics, null, 2)}</pre>
-        </div>
-      )}
+            <div>
+              <div className="text-petro-muted text-sm mb-1">Feature columns</div>
+              <div className="grid grid-cols-2 gap-2 max-h-48 overflow-auto">
+                {schema.columns.map(c=>(
+                  <label key={c} className="flex items-center gap-2 text-petro-text">
+                    <input type="checkbox" checked={features.includes(c)} onChange={()=>toggleFeature(c)}/>
+                    <span>{c} <span className="text-petro-muted text-xs">({schema.dtypes[c]})</span></span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <div className="text-petro-muted text-sm mb-1">Task</div>
+                <select className="input" value={task} onChange={e=>setTask(e.target.value as any)}>
+                  <option value="regression">Regression</option>
+                  <option value="classification">Classification</option>
+                </select>
+              </div>
+              <div>
+                <div className="text-petro-muted text-sm mb-1">Model family</div>
+                <select className="input" value={modelType} onChange={e=>setModelType(e.target.value as any)}>
+                  <option value="xgb">XGBoost</option>
+                  <option value="rf">Random Forest</option>
+                  <option value="gp">Gaussian Process</option>
+                  <option value="nn">Neural Network (MLP)</option>
+                  <option value="transformer">TabTransformer</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <div className="text-petro-muted text-sm mb-1">Save outputs under (inside container or relative):</div>
+              <input className="input" value={outputDir} onChange={e=>setOutputDir(e.target.value)} placeholder="/app/data/outputs/run1"/>
+              <div className="text-petro-muted text-xs mt-1">Default base is /app/data/outputs (mounted to host at ml_service/data/outputs)</div>
+            </div>
+
+            <button className="btn flex items-center gap-2" onClick={()=>void train()}>
+              <PlayCircle className="w-5 h-5"/> Train
+            </button>
+          </div>
+        )}
+
+        <div className="text-petro-muted text-sm min-h-[1.5rem]">{status}</div>
+      </div>
     </div>
-  );
+  )
 }
