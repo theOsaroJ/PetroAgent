@@ -1,14 +1,19 @@
-# build stage
+# --- build stage ---
 FROM node:18-alpine AS builder
 WORKDIR /app
-COPY package.json postcss.config.js tailwind.config.js vite.config.ts index.html ./
+COPY package.json ./
+RUN npm install
 COPY public ./public
 COPY src ./src
-RUN npm ci
+COPY index.html ./index.html
+COPY tsconfig.json vite.config.ts postcss.config.js tailwind.config.js ./
 RUN npm run build
 
-# serve stage
+# --- runtime stage ---
 FROM nginx:stable-alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist /usr/share/nginx/html
+# increase upload limits for CSVs
+RUN echo "client_max_body_size 100m;" > /etc/nginx/conf.d/upload.conf
 EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
