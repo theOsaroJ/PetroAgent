@@ -1,55 +1,48 @@
 services:
   backend:
-    build:
-      context: ./backend
-    container_name: petroagent-backend
-    environment:
-      - AGENT_URL=http://agent:7000
-      - ML_URL=http://ml_service:8000
-      - PYTHONUNBUFFERED=1
+    build: ./backend
+    image: petroagent-backend
+    container_name: petroagent_backend
     ports:
       - "5000:5000"
-    depends_on:
-      - agent
-      - ml_service
+    restart: unless-stopped
 
   agent:
-    build:
-      context: ./agent
-    container_name: petroagent-agent
+    build: ./agent
+    image: petroagent-agent
+    container_name: petroagent_agent
     environment:
-      - OPENAI_KEY_FILE=/run/secrets/openai_key_file
-      - PYTHONUNBUFFERED=1
-    secrets:
-      - openai_key_file
-    ports:
-      - "7000:7000"
+      # Not required; we read api_key.txt directly. Left here for flexibility:
+      # OPENAI_API_KEY: ""
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ./agent/api_key.txt:/run/secrets/openai_api_key:ro
+    depends_on:
+      - backend
+    restart: unless-stopped
 
   ml_service:
-    build:
-      context: ./ml_service
-    container_name: petroagent-ml_service
-    environment:
-      - PYTHONUNBUFFERED=1
-    volumes:
-      - models_data:/app/artifacts
-      - uploads_data:/app/uploads
+    build: ./ml_service
+    image: petroagent-ml_service
+    container_name: petroagent_ml_service
     ports:
       - "8000:8000"
+    volumes:
+      - ./ml_service/data:/app/data
+    environment:
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      - backend
+    restart: unless-stopped
 
   frontend:
-    build:
-      context: ./frontend
-    container_name: petroagent-frontend
+    build: ./frontend
+    image: petroagent-frontend
+    container_name: petroagent_frontend
     ports:
       - "3000:80"
     depends_on:
       - backend
-
-volumes:
-  models_data:
-  uploads_data:
-
-secrets:
-  openai_key_file:
-    file: ./api_key.txt
+      - agent
+      - ml_service
+    restart: unless-stopped
