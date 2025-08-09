@@ -1,62 +1,57 @@
 import os
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from openai import OpenAI
 
-def read_key_from_file() -> str:
-    key_file = os.getenv("OPENAI_KEY_FILE", "")
-    if not key_file or not os.path.isfile(key_file):
-        raise RuntimeError("OPENAI_KEY_FILE not set or file not found")
-    with open(key_file, "r") as f:
-        k = f.read().strip()
-        if not k:
-            raise RuntimeError("OpenAI API key file is empty")
-        return k
+def load_openai_key() -> str:
+    # Priority: env var, secret file, local api_key.txt
+    env_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if env_key:
+        return env_key
+    secret_path = "/run/secrets/openai_api_key"
+    if os.path.exists(secret_path):
+        return open(secret_path, "r", encoding="utf-8").read().strip()
+    local_path = os.path.join(os.path.dirname(__file__), "api_key.txt")
+    if os.path.exists(local_path):
+        return open(local_path, "r", encoding="utf-8").read().strip()
+    raise RuntimeError("OpenAI API key not found. Provide agent/api_key.txt or set OPENAI_API_KEY.")
 
-OPENAI_KEY = read_key_from_file()
-client = OpenAI(api_key=OPENAI_KEY)  
+OPENAI_KEY = load_openai_key()
+# Important: do NOT pass unsupported kwargs like 'proxies'
+client = OpenAI(api_key=OPENAI_KEY)
 
-class ChatIn(BaseModel):
-    message: str
-    history: list[dict] = []
-
-app = FastAPI(title="PetroAgent Chat Service")
+app = FastAPI(title="PetroAgent Chat Agent", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
 
-SYSTEM_PROMPT = (
-    "You are PetroAgent—an expert petroleum engineering copilot. "
-    "You can explain drilling, completions, reservoir, production, petrophysics, "
-    "and also help users upload CSV data, define features/targets, train ML models "
-    "(NeuralNet, GaussianProcess, RandomForest, XGBoost, Transformer), analyze plots, "
-    "and save artifacts. Be clear, accurate, and proactive."
-)
+class ChatIn(BaseModel):
+    message: str
 
-@app.get("/api/health")
+class ChatOut(BaseModel):
+    reply: str
+
+@app.get("/health")
 def health():
-    return {"ok": True}
+    return {"status": "ok", "service": "agent"}
 
-@app.post("/api/chat")
+@app.post("/api/chat", response_model=ChatOut)
 def chat(payload: ChatIn):
-    msgs = [{"role":"system","content":SYSTEM_PROMPT}]
-    # map history [{"role": "user"/"assistant", "content": "..."}]
-    for m in payload.history:
-        if m.get("role") in ("user","assistant","system") and m.get("content"):
-            msgs.append({"role": m["role"], "content": m["content"]})
-    msgs.append({"role":"user","content": payload.message})
-
-    try:
-        # gpt-4o-mini is a great low-latency pick; change to gpt-4.1 if you want heavier reasoning.
-        resp = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=msgs,
-            temperature=0.3,
-        )
-        answer = resp.choices[0].message.content
-        return {"reply": answer}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    # Use a strong but cost-effective model; you can swap for gpt-4o/gpt-4.1 etc.
+    # See openai-python docs: https://github.com/openai/openai-python
+    prompt = payload.message.strip()
+    if not prompt:
+        return ChatOut(reply="Please enter a question.")
+    resp = client.chat.completions.create(
+        model="gpt-4o-mini",
+        temperature=0.3,
+        messages=[
+            {"role": "system", "content": "You are PetroAgent: a petroleum engineering + ML assistant."},
+            {"role": "user", "content": prompt},
+        ],
+    )
+    text = resp.choices[0].message.content or ""
+    return ChatOut(reply=text)
