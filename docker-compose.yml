@@ -1,32 +1,26 @@
 version: '3.8'
-
 services:
-  backend:
-    build: ./backend
-    container_name: petroagent_backend
-    ports:
-      - "5000:5000"
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-
-  ml_service:
-    build: ./ml_service
-    container_name: petroagent_ml_service
-    ports:
-      - "8000:8000"
-
-  agent:
-    build: ./agent_service
-    container_name: petroagent_agent
-    ports:
-      - "7000:7000"
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-
   frontend:
     build: ./frontend
-    container_name: petroagent_frontend
-    ports:
-      - "3000:80"
+    ports: ['3000:80']
     depends_on:
       - agent
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+  backend:
+    build: ./backend
+    ports: ['5000:5000']
+  ml_service:
+    build: ./ml_service
+    ports: ['8000:8000']
+  agent:
+    build: ./agent
+    ports: ['7000:7000']
+    environment:
+      OPENAI_API_KEY: /run/secrets/openai_key
+    secrets:
+      - openai_key
+
+secrets:
+  openai_key:
+    file: api_key.txt
