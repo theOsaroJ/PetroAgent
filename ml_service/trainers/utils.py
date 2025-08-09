@@ -1,49 +1,65 @@
 from __future__ import annotations
-import os, joblib
 import numpy as np
 import pandas as pd
-from typing import List, Tuple, Optional, Any, Dict
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
 
-def ensure_numeric(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
-    out = df.copy()
-    for c in cols:
-        out[c] = pd.to_numeric(out[c], errors="coerce")
-    return out
+def detect_types(df: pd.DataFrame, cols: list[str]):
+    numeric = [c for c in cols if pd.api.types.is_numeric_dtype(df[c])]
+    categorical = [c for c in cols if c not in numeric]
+    return numeric, categorical
 
-def train_test_split_xy(df: pd.DataFrame, features: List[str], target: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    X = df[features].values.astype(np.float32)
-    y = df[target].values.astype(np.float32)
-    return train_test_split(X, y, test_size=0.2, random_state=42)
+def prepare_xy(df: pd.DataFrame, features: list[str], target: str, task: str,
+               standardize: bool, for_transformer: bool):
+    df = df.copy()
+    if target not in df.columns:
+        raise ValueError("Target not in columns")
+    X_raw = df[features]
+    y = df[target]
 
-def standardize_if_needed(model_name: str, X_train: np.ndarray, X_test: np.ndarray):
-    scaler = None
-    if model_name in ("NeuralNet", "GaussianProcess", "Transformer", "XGBoost"):
-        scaler = StandardScaler()
-        X_train = scaler.fit_transform(X_train)
-        X_test = scaler.transform(X_test)
-    return X_train, X_test, scaler
+    # classification: ensure categorical y
+    if task == "classification":
+        if pd.api.types.is_numeric_dtype(y):
+            # keep numeric labels
+            pass
+        else:
+            y = y.astype("category").cat.codes
 
-def metrics_report(model, X_train, y_train, X_test, y_test) -> Dict[str, float]:
-    def _pred(m, X):
-        try:
-            return m.predict(X)
-        except Exception:
-            # PyTorch models wrapped
-            return m(X)
+    num_cols, cat_cols = detect_types(df, features)
 
-    yhat_tr = _pred(model, X_train)
-    yhat_te = _pred(model, X_test)
+    meta = {
+        "features": features,
+        "target": target,
+        "num_cols": num_cols,
+        "cat_cols": cat_cols,
+        "task": task,
+        "standardize": standardize,
+        "for_transformer": for_transformer,
+    }
 
-    mae = float(mean_absolute_error(y_test, yhat_te))
-    rmse = float(mean_squared_error(y_test, yhat_te, squared=False))
-    r2 = float(r2_score(y_test, yhat_te))
-    return {"MAE": mae, "RMSE": rmse, "R2": r2}
+    if for_transformer:
+        # transformer handles its own embedding/normalization later
+        X = X_raw
+        return X, y, meta
 
-def save_artifact(path: str, model: Any, scaler: Optional[Any]):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    payload = {"model": model, "scaler": scaler}
-    joblib.dump(payload, path)
-    return {"path": path, "scaler_included": scaler is not None}
+    # for sklearn/xgb/nn (tabular MLP) use ColumnTransformer
+    transformers = []
+    if num_cols:
+        transformers.append(("num", StandardScaler() if standardize else "passthrough", num_cols))
+    if cat_cols:
+        transformers.append(("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), cat_cols))
+
+    pre = ColumnTransformer(transformers)
+    pipe = Pipeline([("pre", pre)])
+    X = pipe.fit_transform(X_raw)
+
+    meta["preprocess"] = pipe
+    return X, y.values, meta
+
+def split_data(X, y, val_size=0.1, test_size=0.2, random_state=42):
+    X_temp, X_test, y_temp, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state)
+    val_ratio = val_size / (1.0 - test_size)
+    X_train, X_val, y_train, y_val = train_test_split(X_temp, y_temp, test_size=val_ratio, random_state=random_state)
+    return {"X_train": X_train, "X_val": X_val, "X_test": X_test, "y_train": y_train, "y_val": y_val, "y_test": y_test}
