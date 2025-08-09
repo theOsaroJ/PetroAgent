@@ -1,25 +1,32 @@
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader, TensorDataset
-import torch
+import torch, torch.nn as nn, pandas as pd
+import joblib
+from sklearn.model_selection import train_test_split
 
-def train(X, y):
-    X_t = torch.tensor(X.values, dtype=torch.float32)
-    y_t = torch.tensor(y.values, dtype=torch.float32).view(-1,1)
-    ds = TensorDataset(X_t,y_t)
-    dl = DataLoader(ds, batch_size=32, shuffle=True)
-    model = nn.Sequential(
-        nn.Linear(X.shape[1], 128),
-        nn.ReLU(),
-        nn.Linear(128,64),
-        nn.ReLU(),
-        nn.Linear(64,1)
-    )
-    opt = optim.Adam(model.parameters(), lr=1e-3)
+class MLP(nn.Module):
+    def __init__(self, input_dim, layers, activations):
+        super().__init__()
+        seq = []
+        dim = input_dim
+        for l, act in zip(layers, activations):
+            seq.append(nn.Linear(dim, l))
+            seq.append(getattr(nn, act)())
+            dim = l
+        seq.append(nn.Linear(dim, 1))
+        self.net = nn.Sequential(*seq)
+
+    def forward(self, x):
+        return self.net(x)
+
+def train_nn(features, target, params):
+    df = pd.read_csv("data.csv")
+    X = df[features].values; y = df[target].values
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+    model = MLP(len(features), params["layers"], params["activations"])
+    opt = torch.optim.Adam(model.parameters(), lr=params["lr"])
     loss_fn = nn.MSELoss()
-    for _ in range(50):
-        for xb,yb in dl:
-            pred = model(xb)
-            loss = loss_fn(pred,yb)
-            opt.zero_grad(); loss.backward(); opt.step()
-    return model
+    for epoch in range(params["epochs"]):
+        pred = model(torch.tensor(X_train, dtype=torch.float32))
+        loss = loss_fn(pred.squeeze(), torch.tensor(y_train, dtype=torch.float32))
+        opt.zero_grad(); loss.backward(); opt.step()
+    joblib.dump(model, params["save_path"])
+    return {"status": "trained", "mse": loss.item()}
