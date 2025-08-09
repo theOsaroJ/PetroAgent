@@ -1,53 +1,37 @@
 import os
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import Optional
 from openai import OpenAI
 
-def load_openai_key() -> str:
-    # 1) secret file
-    f = os.environ.get("OPENAI_API_KEY_FILE", "/run/secrets/openai_key")
-    if f and os.path.exists(f):
-        return open(f, "r").read().strip()
-    # 2) local file
-    if os.path.exists("api_key.txt"):
-        return open("api_key.txt", "r").read().strip()
-    # 3) env var string
-    k = os.environ.get("OPENAI_API_KEY", "").strip()
-    if k:
-        return k
-    raise RuntimeError("OpenAI API key missing. Provide api_key.txt or env OPENAI_API_KEY or mount /run/secrets/openai_key")
+# 1) Read key from file (default: /run/secrets/openai_api_key) or env var
+OPENAI_KEY_FILE = os.getenv("OPENAI_KEY_FILE", "api_key.txt")
+OPENAI_API_KEY = ""
+if os.path.exists(OPENAI_KEY_FILE):
+    with open(OPENAI_KEY_FILE, "r") as f:
+        OPENAI_API_KEY = f.read().strip()
+else:
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 
-OPENAI_KEY = load_openai_key()
-MODEL = os.environ.get("OPENAI_API_MODEL", "gpt-4o-mini")
+if not OPENAI_API_KEY:
+    raise RuntimeError("OpenAI API key missing: set OPENAI_API_KEY or mount OPENAI_KEY_FILE")
 
-client = OpenAI(api_key=OPENAI_KEY)
+client = OpenAI(api_key=OPENAI_API_KEY)  # no proxies kwarg
 
-app = FastAPI(title="PetroAgent Chat")
+app = FastAPI()
 
-class ChatPayload(BaseModel):
+class ChatIn(BaseModel):
     message: str
-    context: Optional[str] = ""
 
-@app.get("/health")
-def health():
-    return {"ok": True, "model": MODEL}
-
-@app.post("/chat")
-def chat(p: ChatPayload):
+@app.post("/api/chat")
+def chat(body: ChatIn):
     try:
-        sys = (
-            "You are PetroAgent, a petroleum engineering assistant that can discuss drilling, production, "
-            "reservoir engineering, CSV column meaning, and help choose ML models (neural nets, transformers, "
-            "random forests, XGBoost, Gaussian processes). Keep answers crisp and actionable."
+        # use the latest model you’re allowed to use in your account, e.g. gpt-4o-mini
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role":"system","content":"You are PetroAgent."},
+                      {"role":"user","content":body.message}],
+            temperature=0.2,
         )
-        ctx = p.context or ""
-        msgs = [
-            {"role": "system", "content": sys + (f" Dataset columns and context: {ctx}" if ctx else "")},
-            {"role": "user", "content": p.message}
-        ]
-        resp = client.chat.completions.create(model=MODEL, messages=msgs, temperature=0.2)
-        text = resp.choices[0].message.content
-        return {"reply": text}
+        return {"reply": resp.choices[0].message.content}
     except Exception as e:
-        raise HTTPException(500, f"Chat failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
