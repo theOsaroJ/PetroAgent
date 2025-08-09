@@ -1,24 +1,22 @@
 import React from "react";
 
-export default function PlotGallery({ images }: { images: Record<string,string> }) {
-  const keys = Object.keys(images);
-  if (keys.length === 0) return (
-    <div className="bg-white rounded-2xl shadow-lg p-4 text-slate-500">
-      Plots will appear here after you click "Generate Plots".
+export default function PlotGallery({ paths }: { paths: string[] }) {
+  if (!paths.length) return (
+    <div className="glass p-4 h-full flex items-center justify-center text-petro-muted">
+      Plots and reports will appear here after training.
     </div>
   );
-
   return (
-    <div className="bg-white rounded-2xl shadow-lg p-4">
-      <h2 className="text-xl font-semibold mb-3">Analysis & Plots</h2>
+    <div className="glass p-4 h-full overflow-auto">
+      <div className="text-petro-text font-semibold text-lg mb-3">Artifacts</div>
       <div className="grid md:grid-cols-2 gap-4">
-        {keys.map(k => (
-          <div key={k} className="border rounded-lg p-2">
-            <div className="text-xs text-slate-600 mb-1">{k}</div>
-            <img src={`data:image/png;base64,${images[k]}`} className="w-full rounded-md" />
+        {paths.map((p,i)=>(
+          <div key={i} className="bg-white/5 rounded-xl p-3">
+            <div className="text-petro-muted text-xs truncate mb-2">{p}</div>
+            <img src={p.replace("/app/data","/ml")} className="w-full rounded-lg border border-white/10"/>
           </div>
         ))}
       </div>
     </div>
-  );
+  )
 }
