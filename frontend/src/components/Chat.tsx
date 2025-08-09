@@ -1,57 +1,74 @@
 import React, { useState, useRef, useEffect } from "react";
-import { sendChat } from "../api";
+import { chat } from "../lib/api";
+import { Send, Bot, User } from "lucide-react";
 
-type Msg = { role: "user" | "assistant", content: string };
+type Msg = { role: "user"|"assistant"; text: string };
 
 export default function Chat() {
-  const [history, setHistory] = useState<Msg[]>([]);
-  const [text, setText] = useState("");
-  const boxRef = useRef<HTMLDivElement>(null);
+  const [messages, setMessages] = useState<Msg[]>([
+    { role:"assistant", text:"Hi! I'm PetroAgent. Ask me about petroleum engineering or tell me to train a model on your CSV."}
+  ]);
+  const [input, setInput] = useState("");
+  const endRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { boxRef.current?.scrollTo({ top: boxRef.current.scrollHeight, behavior: "smooth" }); }, [history]);
+  useEffect(()=>{ endRef.current?.scrollIntoView({behavior:"smooth"}) },[messages]);
 
-  const submit = async () => {
-    const content = text.trim();
-    if (!content) return;
-    const now = [...history, {role:"user", content}];
-    setHistory(now);
-    setText("");
+  async function send() {
+    const text = input.trim();
+    if(!text) return;
+    setMessages(m=>[...m, {role:"user", text}]);
+    setInput("");
     try {
-      const reply = await sendChat(content, now);
-      setHistory(prev => [...prev, {role:"assistant", content: reply}]);
+      const reply = await chat(text);
+      setMessages(m=>[...m, {role:"assistant", text: reply}]);
     } catch (e:any) {
-      setHistory(prev => [...prev, {role:"assistant", content: "Error: "+ (e?.message || e)}]);
+      setMessages(m=>[...m, {role:"assistant", text:"(Error talking to model)"}]);
     }
   }
 
-  const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault(); submit();
+  function onKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if(e.key==="Enter" && !e.shiftKey){
+      e.preventDefault();
+      void send();
     }
-  };
+  }
 
   return (
-    <div className="bg-white rounded-2xl shadow-lg p-4">
-      <div ref={boxRef} className="h-72 overflow-y-auto space-y-3">
-        {history.length === 0 && (
-          <div className="text-slate-500 text-sm">Ask anything about petroleum engineering, or say “help me train a model”.</div>
-        )}
-        {history.map((m, i) => (
-          <div key={i} className={`max-w-[85%] px-4 py-2 rounded-2xl ${m.role==='user'?'bg-brand-100 ml-auto':'bg-slate-100'}`}>
-            <div className="text-sm whitespace-pre-wrap">{m.content}</div>
+    <div className="glass p-4 h-full flex flex-col">
+      <div className="flex items-center gap-3 mb-3">
+        <img src="/logo.png" className="w-10 h-10 rounded-lg" />
+        <div>
+          <div className="text-petro-text font-semibold text-lg">PetroAgent</div>
+          <div className="text-petro-muted text-xs">LLM Assistant</div>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-auto space-y-3 pr-1">
+        {messages.map((m, i)=>(
+          <div key={i} className={`flex items-start gap-2 ${m.role==="assistant"?"":"justify-end"}`}>
+            {m.role==="assistant" && <Bot className="text-petro-accent w-5 h-5 mt-1"/>}
+            <div className={`px-3 py-2 rounded-2xl max-w-[80%] ${m.role==="assistant"?"bg-white/5 text-petro-text":"bg-petro-accent text-slate-900"}`}>
+              {m.text}
+            </div>
+            {m.role==="user" && <User className="text-petro-accent w-5 h-5 mt-1"/>}
           </div>
         ))}
+        <div ref={endRef}></div>
       </div>
+
       <div className="mt-3 flex gap-2">
-        <input
-          className="flex-1 border rounded-xl px-3 py-2 outline-brand-500"
-          placeholder="Type your message and press Enter"
-          value={text}
-          onChange={e=>setText(e.target.value)}
+        <textarea
+          value={input}
+          onChange={e=>setInput(e.target.value)}
           onKeyDown={onKey}
+          placeholder="Ask anything. Press Enter to send (Shift+Enter for newline)…"
+          rows={2}
+          className="input"
         />
-        <button onClick={submit} className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-xl">Send</button>
+        <button className="btn" onClick={()=>void send()} title="Send">
+          <Send className="w-5 h-5"/>
+        </button>
       </div>
     </div>
-  );
+  )
 }
