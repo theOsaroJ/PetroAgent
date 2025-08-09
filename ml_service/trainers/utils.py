@@ -1,45 +1,49 @@
-import os
+from __future__ import annotations
+import os, joblib
 import numpy as np
-import matplotlib.pyplot as plt
+import pandas as pd
+from typing import List, Tuple, Optional, Any, Dict
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
-def ensure_subdir(path: str):
-    os.makedirs(path, exist_ok=True)
+def ensure_numeric(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
+    out = df.copy()
+    for c in cols:
+        out[c] = pd.to_numeric(out[c], errors="coerce")
+    return out
 
-def sanitize_rel(rel: str) -> str:
-    rel = rel.strip().lstrip("/").replace("..", "")
-    return rel or "artifacts/run1"
+def train_test_split_xy(df: pd.DataFrame, features: List[str], target: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    X = df[features].values.astype(np.float32)
+    y = df[target].values.astype(np.float32)
+    return train_test_split(X, y, test_size=0.2, random_state=42)
 
-def metric_dict(y_true, y_pred):
-    from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-    mae = float(mean_absolute_error(y_true, y_pred))
-    rmse = float(mean_squared_error(y_true, y_pred, squared=False))
-    r2 = float(r2_score(y_true, y_pred))
+def standardize_if_needed(model_name: str, X_train: np.ndarray, X_test: np.ndarray):
+    scaler = None
+    if model_name in ("NeuralNet", "GaussianProcess", "Transformer", "XGBoost"):
+        scaler = StandardScaler()
+        X_train = scaler.fit_transform(X_train)
+        X_test = scaler.transform(X_test)
+    return X_train, X_test, scaler
+
+def metrics_report(model, X_train, y_train, X_test, y_test) -> Dict[str, float]:
+    def _pred(m, X):
+        try:
+            return m.predict(X)
+        except Exception:
+            # PyTorch models wrapped
+            return m(X)
+
+    yhat_tr = _pred(model, X_train)
+    yhat_te = _pred(model, X_test)
+
+    mae = float(mean_absolute_error(y_test, yhat_te))
+    rmse = float(mean_squared_error(y_test, yhat_te, squared=False))
+    r2 = float(r2_score(y_test, yhat_te))
     return {"MAE": mae, "RMSE": rmse, "R2": r2}
 
-def plot_pred_vs_actual(y_true, y_pred, out_path):
-    plt.figure()
-    plt.scatter(y_true, y_pred, s=10)
-    plt.xlabel("Actual")
-    plt.ylabel("Predicted")
-    plt.title("Predicted vs Actual")
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=160)
-    plt.close()
-
-def plot_residuals(y_true, y_pred, out_path):
-    resid = y_true - y_pred
-    plt.figure()
-    plt.scatter(y_pred, resid, s=10)
-    plt.axhline(0)
-    plt.xlabel("Predicted")
-    plt.ylabel("Residual")
-    plt.title("Residuals")
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=160)
-    plt.close()
-
-def save_plot_paths(paths, data_root):
-    rels = []
-    for p in paths:
-        rels.append(os.path.relpath(p, data_root).replace("\\", "/"))
-    return rels
+def save_artifact(path: str, model: Any, scaler: Optional[Any]):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    payload = {"model": model, "scaler": scaler}
+    joblib.dump(payload, path)
+    return {"path": path, "scaler_included": scaler is not None}
