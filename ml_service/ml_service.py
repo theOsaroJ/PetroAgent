@@ -1,38 +1,29 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI
 from pydantic import BaseModel
-import pandas as pd
-from trainers import (
-    neural_net,
-    random_forest,
-    gp,
-    xgboost_trainer,
-    transformer,
-)
+from trainers.neural_net import train_nn
+from trainers.gaussian_process import train_gp
+from trainers.random_forest import train_rf
+from trainers.xgboost_trainer import train_xgb
+from trainers.transformer import train_transformer
 
-app = FastAPI(title="PetroAgent ML Service")
-
-class TrainRequest(BaseModel):
+class TrainConfig(BaseModel):
     features: list[str]
     target: str
-    model_type: str  # "nn","rf","gp","xgb","tf"
+    model_type: str
+    params: dict
+
+app = FastAPI()
 
 @app.post("/train")
-async def train(req: TrainRequest, file: UploadFile = File(...)):
-    df = pd.read_csv(file.file)
-    X = df[req.features]
-    y = df[req.target]
-    if req.model_type == "nn":
-        model = neural_net.train(X, y)
-    elif req.model_type == "rf":
-        model = random_forest.train(X, y)
-    elif req.model_type == "gp":
-        model = gp.train(X, y)
-    elif req.model_type == "xgb":
-        model = xgboost_trainer.train(X, y)
-    elif req.model_type == "tf":
-        model = transformer.train(X, y)
-    else:
-        raise ValueError("Unknown model type")
-    path = f"./models/{req.model_type}.pt"
-    model.save(path)
-    return {"status": "trained", "model_path": path}
+def train(cfg: TrainConfig):
+    if cfg.model_type == "NeuralNet":
+        return train_nn(cfg.features, cfg.target, cfg.params)
+    if cfg.model_type == "GP":
+        return train_gp(cfg.features, cfg.target, cfg.params)
+    if cfg.model_type == "RF":
+        return train_rf(cfg.features, cfg.target, cfg.params)
+    if cfg.model_type == "XGBoost":
+        return train_xgb(cfg.features, cfg.target, cfg.params)
+    if cfg.model_type == "Transformer":
+        return train_transformer(cfg.features, cfg.target, cfg.params)
+    return {"error": "Unknown model"}
