@@ -1,53 +1,66 @@
-import os
-import uuid
-import pandas as pd
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+import os
+import httpx
 
-DATA_DIR = os.environ.get("DATA_DIR", "/data")
-UPLOADS_DIR = os.path.join(DATA_DIR, "uploads")
-ARTIFACTS_DIR = os.path.join(DATA_DIR, "artifacts")
-PLOTS_DIR = os.path.join(DATA_DIR, "plots")
+AGENT_URL = os.getenv("AGENT_URL", "http://agent:7000")
+ML_URL = os.getenv("ML_URL", "http://ml_service:8000")
 
-os.makedirs(UPLOADS_DIR, exist_ok=True)
-os.makedirs(ARTIFACTS_DIR, exist_ok=True)
-os.makedirs(PLOTS_DIR, exist_ok=True)
+app = FastAPI(title="PetroAgent Backend Gateway")
 
-app = FastAPI(title="PetroAgent Backend")
-
-# If you access this service directly (not via nginx), CORS it.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_headers=["*"],
-    allow_methods=["*"],
+    allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
 
-# Serve /files/* from /data
-app.mount("/files", StaticFiles(directory=DATA_DIR), name="files")
-
-@app.get("/health")
-def health():
+@app.get("/api/health")
+async def health():
     return {"ok": True}
 
-@app.post("/upload")
+# ----- Chat -----
+@app.post("/api/chat")
+async def chat(payload: dict):
+    async with httpx.AsyncClient(timeout=60) as client:
+        r = await client.post(f"{AGENT_URL}/api/chat", json=payload)
+        r.raise_for_status()
+        return r.json()
+
+# ----- Upload -----
+@app.post("/api/upload")
 async def upload(file: UploadFile = File(...)):
-    if not file.filename.lower().endswith(".csv"):
-        raise HTTPException(400, "Only .csv files are supported.")
-    file_id = str(uuid.uuid4()) + ".csv"
-    dest_path = os.path.join(UPLOADS_DIR, file_id)
-    with open(dest_path, "wb") as f:
-        content = await file.read()
-        f.write(content)
-    try:
-        df = pd.read_csv(dest_path, nrows=50)
-    except Exception as e:
-        raise HTTPException(400, f"CSV parse failed: {e}")
+    files = {"file": (file.filename, await file.read(), file.content_type or "text/csv")}
+    async with httpx.AsyncClient(timeout=300) as client:
+        r = await client.post(f"{ML_URL}/api/upload", files=files)
+        r.raise_for_status()
+        return r.json()
 
-    head = df.head(10).to_dict(orient="records")
-    columns = list(df.columns)
+# ----- List models -----
+@app.get("/api/models")
+async def models():
+    async with httpx.AsyncClient(timeout=60) as client:
+        r = await client.get(f"{ML_URL}/api/models")
+        r.raise_for_status()
+        return r.json()
 
-    # Return path relative to /data for cross-service access
-    rel_path = os.path.relpath(dest_path, DATA_DIR).replace("\\", "/")
-    return {"file_rel_path": rel_path, "columns": columns, "head": head}
+# ----- Train -----
+@app.post("/api/train")
+async def train(payload: dict):
+    async with httpx.AsyncClient(timeout=None) as client:
+        r = await client.post(f"{ML_URL}/api/train", json=payload)
+        r.raise_for_status()
+        return r.json()
+
+# ----- Plots / describe -----
+@app.post("/api/plots")
+async def plots(payload: dict):
+    async with httpx.AsyncClient(timeout=300) as client:
+        r = await client.post(f"{ML_URL}/api/plots", json=payload)
+        r.raise_for_status()
+        return r.json()
+
+@app.post("/api/describe")
+async def describe(payload: dict):
+    async with httpx.AsyncClient(timeout=120) as client:
+        r = await client.post(f"{ML_URL}/api/describe", json=payload)
+        r.raise_for_status()
+        return r.json()
