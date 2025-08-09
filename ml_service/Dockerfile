@@ -1,15 +1,12 @@
 FROM python:3.11-slim
-
 WORKDIR /app
+ENV PYTHONUNBUFFERED=1
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
-# avoid heavy CUDA wheels; use CPU-only stack
 RUN pip install --no-cache-dir -r requirements.txt
-
-COPY ml_service.py ./ml_service.py
+COPY ml_service.py .
 COPY trainers ./trainers
-
-# writable places for uploads and artifacts
-RUN mkdir -p /app/uploads /app/artifacts
-
+RUN mkdir -p /app/data/uploads /app/data/outputs
+VOLUME ["/app/data"]
 EXPOSE 8000
 CMD ["uvicorn", "ml_service:app", "--host", "0.0.0.0", "--port", "8000"]
