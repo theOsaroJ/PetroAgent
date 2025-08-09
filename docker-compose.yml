@@ -1,66 +1,55 @@
-version: "3.9"
-
 services:
+  backend:
+    build:
+      context: ./backend
+    container_name: petroagent-backend
+    environment:
+      - AGENT_URL=http://agent:7000
+      - ML_URL=http://ml_service:8000
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "5000:5000"
+    depends_on:
+      - agent
+      - ml_service
+
+  agent:
+    build:
+      context: ./agent
+    container_name: petroagent-agent
+    environment:
+      - OPENAI_KEY_FILE=/run/secrets/openai_key_file
+      - PYTHONUNBUFFERED=1
+    secrets:
+      - openai_key_file
+    ports:
+      - "7000:7000"
+
+  ml_service:
+    build:
+      context: ./ml_service
+    container_name: petroagent-ml_service
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - models_data:/app/artifacts
+      - uploads_data:/app/uploads
+    ports:
+      - "8000:8000"
+
   frontend:
-    build: ./frontend
-    container_name: petroagent_frontend
+    build:
+      context: ./frontend
+    container_name: petroagent-frontend
     ports:
       - "3000:80"
     depends_on:
       - backend
-      - ml_service
-      - agent
-    networks:
-      - petro
-    restart: unless-stopped
-
-  backend:
-    build: ./backend
-    container_name: petroagent_backend
-    environment:
-      - DATA_DIR=/data
-      - UVICORN_WORKERS=1
-      - UVICORN_PORT=5000
-    volumes:
-      - data:/data
-    expose:
-      - "5000"
-    networks:
-      - petro
-    restart: unless-stopped
-
-  ml_service:
-    build: ./ml_service
-    container_name: petroagent_ml_service
-    environment:
-      - DATA_DIR=/data
-      - UVICORN_WORKERS=1
-      - UVICORN_PORT=8000
-    volumes:
-      - data:/data
-    expose:
-      - "8000"
-    networks:
-      - petro
-    restart: unless-stopped
-
-  agent:
-    build: ./agent
-    container_name: petroagent_agent
-    environment:
-      - OPENAI_API_MODEL=gpt-4o-mini
-      - OPENAI_API_KEY_FILE=/run/secrets/openai_key
-      - UVICORN_PORT=7000
-    volumes:
-      - ./api_key.txt:/run/secrets/openai_key:ro
-    expose:
-      - "7000"
-    networks:
-      - petro
-    restart: unless-stopped
-
-networks:
-  petro:
 
 volumes:
-  data:
+  models_data:
+  uploads_data:
+
+secrets:
+  openai_key_file:
+    file: ./api_key.txt
