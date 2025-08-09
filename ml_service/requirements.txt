@@ -1,7 +1,9 @@
-fastapi
-uvicorn
-pandas
-scikit-learn
-xgboost
-torch
-joblib
+fastapi==0.111.0
+uvicorn[standard]==0.30.6
+pandas==2.2.2
+scikit-learn==1.5.2
+matplotlib==3.9.2
+numpy==1.26.4
+joblib==1.4.2
+xgboost==2.1.2
+torch==2.2.2+cpu
