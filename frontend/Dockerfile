@@ -1,7 +1,7 @@
 # --- build stage ---
 FROM node:18-alpine AS builder
 WORKDIR /app
-COPY package.json ./
+COPY package.json package-lock.json ./
 RUN npm install
 COPY public ./public
 COPY src ./src
@@ -13,7 +13,5 @@ RUN npm run build
 FROM nginx:stable-alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist /usr/share/nginx/html
-# increase upload limits for CSVs
-RUN echo "client_max_body_size 100m;" > /etc/nginx/conf.d/upload.conf
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
