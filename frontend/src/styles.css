@@ -2,23 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body, #root { height: 100%; }
-
-.glass {
-  background: linear-gradient(135deg, rgba(15,23,42,0.8), rgba(2,6,23,0.75));
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255,255,255,0.06);
-  border-radius: 18px;
-}
-
-.input {
-  @apply w-full rounded-xl bg-slate-900/70 text-petro-text placeholder-petro-muted px-4 py-3 outline-none border border-white/10 focus:border-petro-accent;
-}
-
-.btn {
-  @apply rounded-xl px-4 py-3 font-semibold text-slate-900 bg-petro-accent hover:opacity-90 transition;
-}
-
-.badge {
-  @apply inline-flex items-center gap-2 text-xs px-2 py-1 rounded-full bg-white/10 text-petro-text border border-white/10;
+.bg-hero {
+  background-image: url("/banner.png");
+  background-size: cover;
+  background-position: center;
 }
