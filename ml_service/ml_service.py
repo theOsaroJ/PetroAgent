@@ -1,105 +1,88 @@
 import os
-import uuid
-import pandas as pd
-from fastapi import FastAPI, UploadFile, File, Form
+import io
+from typing import List, Optional, Dict, Any
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from trainers import utils, rf, gp, xgb, nn, transformer, plots, save_load
+import pandas as pd
+from utils import ensure_dir, split_xy, save_metrics_json, parity_plot
+from trainers import rf, xgb, gp, nn, transformer
 
-DATA_DIR = "/app/data"
-UPLOADS_DIR = os.path.join(DATA_DIR, "uploads")
-OUTPUTS_DIR = os.path.join(DATA_DIR, "outputs")
-os.makedirs(UPLOADS_DIR, exist_ok=True)
-os.makedirs(OUTPUTS_DIR, exist_ok=True)
-
-app = FastAPI(title="PetroAgent ML Service", version="1.0.0")
+app = FastAPI(title="PetroAgent ML Service")
 app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
+    CORSMiddleware,
+    allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
 
+DEFAULT_SAVE_DIR = "/app/outputs"
+
 @app.get("/health")
-def health():
-    return {"status": "ok", "service": "ml_service"}
+def health(): return {"status": "ok"}
 
-class SchemaOut(BaseModel):
-    upload_id: str
-    n_rows: int
-    n_cols: int
-    columns: list[str]
-    dtypes: dict
+@app.post("/columns")
+async def columns(file: UploadFile = File(...)):
+    try:
+        raw = await file.read()
+        df = pd.read_csv(io.BytesIO(raw))
+        cols = df.columns.tolist()
+        sample = df.head(10).to_dict(orient="records")
+        return {"columns": cols, "sample": sample, "rows": int(df.shape[0])}
+    except Exception as e:
+        raise HTTPException(400, f"Failed to parse CSV: {e}")
 
-@app.post("/ml/upload", response_model=SchemaOut)
-async def upload(file: UploadFile = File(...)):
-    ext = os.path.splitext(file.filename or "")[1].lower()
-    if ext not in [".csv"]:
-        return {"error": "Only CSV supported for now."}
-    uid = str(uuid.uuid4())
-    save_path = os.path.join(UPLOADS_DIR, f"{uid}.csv")
-    with open(save_path, "wb") as f:
-        f.write(await file.read())
-    df = pd.read_csv(save_path)
-    dtypes = {c: str(df[c].dtype) for c in df.columns}
-    return SchemaOut(upload_id=uid, n_rows=len(df), n_cols=df.shape[1], columns=df.columns.tolist(), dtypes=dtypes)
+@app.post("/train")
+async def train(
+    file: UploadFile = File(...),
+    features: str = Form(...),
+    target: str = Form(...),
+    model_type: str = Form(...),
+    save_dir: Optional[str] = Form(None),
+):
+    try:
+        raw = await file.read()
+        df = pd.read_csv(io.BytesIO(raw))
+    except Exception as e:
+        raise HTTPException(400, f"Failed to read CSV: {e}")
 
-class TrainIn(BaseModel):
-    upload_id: str
-    target: str
-    features: list[str]
-    task: str                      # "regression" | "classification"
-    model_type: str                # "rf" | "gp" | "xgb" | "nn" | "transformer"
-    output_dir: str                # absolute path inside container or relative under /app/data/outputs
-    test_size: float = 0.2
-    val_size: float = 0.1
-    random_state: int = 42
-    standardize: bool = True
-    max_rows: int | None = None    # subsample if needed for GP
+    feat_list = [c.strip() for c in features.split(",") if c.strip()]
+    if target not in df.columns:
+        raise HTTPException(400, f"Target '{target}' not in CSV.")
+    for f in feat_list:
+        if f not in df.columns:
+            raise HTTPException(400, f"Feature '{f}' not in CSV.")
 
-class TrainOut(BaseModel):
-    model_path: str
-    metrics: dict
-    artifacts: list[str]
+    X, y = split_xy(df, feat_list, target)
+    out_dir = ensure_dir(save_dir or DEFAULT_SAVE_DIR)
+    model_type = model_type.lower().strip()
 
-@app.post("/ml/train", response_model=TrainOut)
-def train(payload: TrainIn):
-    csv_path = os.path.join(UPLOADS_DIR, f"{payload.upload_id}.csv")
-    if not os.path.exists(csv_path):
-        raise FileNotFoundError("Upload ID not found.")
-    out_dir = payload.output_dir.strip() or OUTPUTS_DIR
-    if not out_dir.startswith("/"):
-        out_dir = os.path.join(OUTPUTS_DIR, out_dir)
-    os.makedirs(out_dir, exist_ok=True)
-
-    df = pd.read_csv(csv_path)
-    if payload.max_rows and len(df) > payload.max_rows:
-        df = df.sample(payload.max_rows, random_state=payload.random_state)
-
-    X, y, meta = utils.prepare_xy(
-        df=df,
-        features=payload.features,
-        target=payload.target,
-        task=payload.task,
-        standardize=payload.standardize,
-        for_transformer=(payload.model_type == "transformer"),
-    )
-
-    splits = utils.split_data(
-        X, y, val_size=payload.val_size, test_size=payload.test_size, random_state=payload.random_state
-    )
-
-    if payload.model_type == "rf":
-        model, metrics = rf.train_rf(splits, task=payload.task)
-    elif payload.model_type == "gp":
-        model, metrics = gp.train_gp(splits, task=payload.task)
-    elif payload.model_type == "xgb":
-        model, metrics = xgb.train_xgb(splits, task=payload.task)
-    elif payload.model_type == "nn":
-        model, metrics = nn.train_nn(splits, task=payload.task, meta=meta)
-    elif payload.model_type == "transformer":
-        model, metrics = transformer.train_tabtransformer(splits, task=payload.task, meta=meta)
+    # Train
+    if model_type == "rf":
+        result = rf.train_rf(X, y, out_dir)
+    elif model_type == "xgb":
+        result = xgb.train_xgb(X, y, out_dir)
+    elif model_type == "gp":
+        result = gp.train_gp(X, y, out_dir)
+    elif model_type == "nn":
+        result = nn.train_mlp(X, y, out_dir)
+    elif model_type == "transformer":
+        result = transformer.train_transformer(X, y, out_dir)
     else:
-        raise ValueError("Unknown model_type")
+        raise HTTPException(400, f"Unknown model_type: {model_type}")
 
-    model_path = save_load.save_model(model, meta, out_dir, payload.model_type)
-    art_paths = plots.generate_artifacts(splits, model, meta, out_dir, payload.task, payload.model_type)
+    # Parity plot
+    parity_path = os.path.join(out_dir, f"{model_type}_parity.png")
+    parity_plot(result["y_true"], result["y_pred"], parity_path)
 
-    return TrainOut(model_path=model_path, metrics=metrics, artifacts=art_paths)
+    # Persist metrics json
+    metrics_path = os.path.join(out_dir, f"{model_type}_metrics.json")
+    save_metrics_json(result["metrics"], metrics_path)
+
+    payload = {
+        "model_type": model_type,
+        "metrics": result["metrics"],
+        "artifacts": {
+            "model_path": result["model_path"],
+            "parity_plot": parity_path,
+            "metrics_json": metrics_path,
+        }
+    }
+    return payload
