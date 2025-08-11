@@ -65,3 +65,12 @@ async def upload_and_train(
         r = await x.post(f"{ML_SERVICE_URL}/train", files=files, data=data)
         r.raise_for_status()
         return r.json()
+
+from fastapi.responses import FileResponse
+from fastapi import Query
+
+@app.get("/api/static")
+async def static_proxy(path: str = Query(...)):
+    if not os.path.exists(path): 
+        raise HTTPException(404, "File not found")
+    return FileResponse(path)
