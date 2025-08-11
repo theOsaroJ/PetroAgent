@@ -1,57 +1,67 @@
 import os
-from fastapi import FastAPI
+from typing import Optional
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import httpx
 from openai import OpenAI
 
-def load_openai_key() -> str:
-    # Priority: env var, secret file, local api_key.txt
-    env_key = os.getenv("OPENAI_API_KEY", "").strip()
-    if env_key:
-        return env_key
-    secret_path = "/run/secrets/openai_api_key"
-    if os.path.exists(secret_path):
-        return open(secret_path, "r", encoding="utf-8").read().strip()
-    local_path = os.path.join(os.path.dirname(__file__), "api_key.txt")
-    if os.path.exists(local_path):
-        return open(local_path, "r", encoding="utf-8").read().strip()
-    raise RuntimeError("OpenAI API key not found. Provide agent/api_key.txt or set OPENAI_API_KEY.")
-
-OPENAI_KEY = load_openai_key()
-# Important: do NOT pass unsupported kwargs like 'proxies'
-client = OpenAI(api_key=OPENAI_KEY)
-
-app = FastAPI(title="PetroAgent Chat Agent", version="1.0.0")
-
+app = FastAPI(title="PetroAgent - Agent")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
 
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+OPENAI_KEY_FILE = os.getenv("OPENAI_API_KEY_FILE")
+OPENAI_KEY = None
+if OPENAI_KEY_FILE and os.path.exists(OPENAI_KEY_FILE):
+    with open(OPENAI_KEY_FILE, "r") as f:
+        OPENAI_KEY = f.read().strip()
+else:
+    OPENAI_KEY = os.getenv("OPENAI_API_KEY", "")
+
+client = OpenAI(api_key=OPENAI_KEY)  # modern SDK (no proxies kwarg)
+
+ML_SERVICE_URL = os.getenv("ML_SERVICE_URL", "http://ml_service:8000")
+
 class ChatIn(BaseModel):
     message: str
 
-class ChatOut(BaseModel):
-    reply: str
-
-@app.get("/health")
-def health():
-    return {"status": "ok", "service": "agent"}
-
-@app.post("/api/chat", response_model=ChatOut)
-def chat(payload: ChatIn):
-    # Use a strong but cost-effective model; you can swap for gpt-4o/gpt-4.1 etc.
-    # See openai-python docs: https://github.com/openai/openai-python
-    prompt = payload.message.strip()
-    if not prompt:
-        return ChatOut(reply="Please enter a question.")
+@app.post("/api/chat")
+async def chat(payload: ChatIn):
+    # lightweight system prompt
+    msgs = [
+        {"role": "system", "content": "You are PetroAgent, an expert petroleum data copilot."},
+        {"role": "user", "content": payload.message},
+    ]
     resp = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model=OPENAI_MODEL,
+        messages=msgs,
         temperature=0.3,
-        messages=[
-            {"role": "system", "content": "You are PetroAgent: a petroleum engineering + ML assistant."},
-            {"role": "user", "content": prompt},
-        ],
     )
-    text = resp.choices[0].message.content or ""
-    return ChatOut(reply=text)
+    return {"reply": resp.choices[0].message.content}
+
+@app.post("/api/columns")
+async def detect_columns(file: UploadFile = File(...)):
+    async with httpx.AsyncClient(timeout=120) as x:
+        files = {"file": (file.filename, await file.read(), file.content_type or "text/csv")}
+        r = await x.post(f"{ML_SERVICE_URL}/columns", files=files)
+        r.raise_for_status()
+        return r.json()
+
+@app.post("/api/upload")
+async def upload_and_train(
+    file: UploadFile = File(...),
+    features: str = Form(...),
+    target: str = Form(...),
+    model_type: str = Form(...),    # rf | xgb | gp | nn | transformer
+    save_dir: Optional[str] = Form(None)
+):
+    async with httpx.AsyncClient(timeout=None) as x:
+        files = {"file": (file.filename, await file.read(), file.content_type or "text/csv")}
+        data = {"features": features, "target": target, "model_type": model_type}
+        if save_dir: data["save_dir"] = save_dir
+        r = await x.post(f"{ML_SERVICE_URL}/train", files=files, data=data)
+        r.raise_for_status()
+        return r.json()
