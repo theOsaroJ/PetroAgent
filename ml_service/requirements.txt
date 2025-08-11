@@ -8,3 +8,4 @@ joblib
 xgboost
 torch
 pydantic
+python-multipart
