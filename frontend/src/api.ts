@@ -1,34 +1,34 @@
-// frontend/src/api.ts
-import axios from "axios";
+import axios from 'axios';
 
-const ml = axios.create({
-  baseURL: "/api/ml",
-  // IMPORTANT: don't set Content-Type for FormData; the browser sets the boundary.
-});
-
-export async function detectColumns(file: File): Promise<string[]> {
-  const fd = new FormData();
-  fd.append("file", file);
-  const { data } = await ml.post("/columns", fd);
-  return data.columns as string[];
+export async function chat(message: string): Promise<string> {
+  const res = await axios.post('/api/chat', { message });
+  return res.data.reply;
 }
 
-export type TrainPayload = {
+export async function detectColumns(file: File): Promise<string[]> {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await axios.post('/ml/columns', form, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  });
+  return res.data.columns;
+}
+
+export async function trainModel(params: {
   file: File;
-  features: string[];   // array of column names
-  target: string;       // target column
-  model?: string;       // "random_forest" | "logreg" | "mlp" | "rf"
-  saveDir?: string;     // inside container, e.g. "/app/outputs"
-};
-
-export async function trainModel(p: TrainPayload) {
-  const fd = new FormData();
-  fd.append("file", p.file);
-  fd.append("features", p.features.join(","));
-  fd.append("target", p.target);
-  fd.append("model", p.model ?? "random_forest");
-  fd.append("save_dir", p.saveDir ?? "/app/outputs");
-
-  const { data } = await ml.post("/train", fd);
-  return data;
+  features: string[];
+  target: string;
+  model_type: string;
+  save_dir: string;
+}) {
+  const form = new FormData();
+  form.append('file', params.file);
+  form.append('features', JSON.stringify(params.features));
+  form.append('target', params.target);
+  form.append('model_type', params.model_type);
+  form.append('save_dir', params.save_dir);
+  const res = await axios.post('/ml/train', form, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  });
+  return res.data;
 }
