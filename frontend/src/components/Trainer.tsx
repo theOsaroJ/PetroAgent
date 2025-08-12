@@ -1,149 +1,128 @@
-import React, { useState } from "react";
-
-type Column = string;
+import React, { useState } from 'react'
+import { detectColumns, trainModel } from '../api'
+import type { TrainResponse } from '../types'
 
 export default function Trainer() {
-  const [file, setFile] = useState<File | null>(null);
-  const [columns, setColumns] = useState<Column[]>([]);
-  const [selected, setSelected] = useState<string[]>([]);
-  const [target, setTarget] = useState<string>("");
-  const [model, setModel] = useState<string>("Random Forest");
-  const [saveDir, setSaveDir] = useState<string>("/app/outputs");
-  const [working, setWorking] = useState<boolean>(false);
+  const [file, setFile] = useState<File | null>(null)
+  const [columns, setColumns] = useState<string[]>([])
+  const [features, setFeatures] = useState<string[]>([])
+  const [target, setTarget] = useState<string>('')
+  const [modelType, setModelType] = useState('random_forest')
+  const [saveDir, setSaveDir] = useState('/app/outputs')
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<TrainResponse | null>(null)
 
-  async function onDetect() {
-    if (!file) {
-      alert("Choose a CSV first");
-      return;
+  async function handleDetect() {
+    if (!file) return alert('Please choose a CSV first.')
+    try {
+      const cols = await detectColumns(file)
+      setColumns(cols)
+      setFeatures(cols.filter(c => c !== cols[0]))
+      setTarget(cols[0] || 'y')
+    } catch (e:any) {
+      alert('Failed to detect columns: ' + (e.response?.data?.detail || e.message))
     }
-    const fd = new FormData();
-    fd.append("file", file);
-    const r = await fetch("/ml/columns", {
-      method: "POST",
-      body: fd, // DO NOT set Content-Type
-    });
-    if (!r.ok) {
-      const t = await r.text();
-      alert(`Detect failed: ${t}`);
-      return;
-    }
-    const data = await r.json();
-    setColumns(data.columns || []);
   }
 
-  async function onTrain() {
-    if (!file) {
-      alert("Choose a CSV first");
-      return;
-    }
-    if (!target) {
-      alert("Pick a target column");
-      return;
-    }
-    if (selected.length === 0) {
-      alert("Pick at least one feature");
-      return;
-    }
+  async function handleTrain() {
+    if (!file) return alert('Choose a CSV first.')
+    if (!target) return alert('Pick a target column.')
+    if (features.length === 0) return alert('Pick at least one feature.')
 
-    setWorking(true);
+    setBusy(true)
+    setResult(null)
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("features", selected.join(","));
-      fd.append("target", target);
-      fd.append("model_name", model);
-      fd.append("save_dir", saveDir);
-
-      const resp = await fetch("/ml/train", {
-        method: "POST",
-        body: fd, // DO NOT set Content-Type
-      });
-
-      if (!resp.ok) {
-        const txt = await resp.text();
-        alert(`Training failed: ${resp.status} ${txt}`);
-        return;
-      }
-      const data = await resp.json();
-      alert(`OK! Saved: ${data.model_path}\nR^2=${data.metrics.r2.toFixed(3)} RMSE=${data.metrics.rmse.toFixed(3)}`);
-    } catch (e: any) {
-      alert(`Training error: ${e?.message || e}`);
+      const res: TrainResponse = await trainModel({
+        file, features, target,
+        model_type: modelType,
+        save_dir: saveDir
+      })
+      setResult(res)
+      alert('Training complete. Model saved to: ' + res.saved_to)
+    } catch (e:any) {
+      const status = e?.response?.status
+      const msg = e?.response?.data?.detail || e.message
+      alert(`Training failed: ${status ? 'HTTP '+status+' - ' : ''}${msg}`)
+      console.error(e)
     } finally {
-      setWorking(false);
+      setBusy(false)
     }
   }
 
   return (
-    <div className="trainer">
-      <div>
-        <input
-          type="file"
-          accept=".csv"
-          onChange={(e) => setFile(e.target.files?.[0] || null)}
-        />
-        <button onClick={onDetect}>Detect columns</button>
+    <div className="grid md:grid-cols-2 gap-6">
+      <div className="space-y-4">
+        <div className="p-4 border border-slate-800 rounded-2xl">
+          <div className="font-semibold mb-2">Train Models</div>
+          <div className="flex items-center gap-3 mb-2">
+            <input type="file" accept=".csv" onChange={e=>setFile(e.target.files?.[0]||null)} />
+            <button onClick={handleDetect} className="px-3 py-1 rounded-lg bg-slate-800">Detect columns</button>
+          </div>
+
+          {columns.length>0 && (
+            <div className="space-y-3">
+              <div>
+                <div className="text-sm mb-1">Features</div>
+                <div className="flex flex-wrap gap-2 max-h-40 overflow-auto">
+                  {columns.map(c => (
+                    <label key={c} className="text-sm flex items-center gap-1 bg-slate-800 rounded px-2 py-1">
+                      <input type="checkbox" checked={features.includes(c)} disabled={c===target}
+                        onChange={(e)=>{
+                          if (e.target.checked) setFeatures([...features, c])
+                          else setFeatures(features.filter(f=>f!==c))
+                        }} />
+                      {c}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="text-sm">Target</div>
+                <select className="bg-slate-800 rounded px-2 py-1" value={target} onChange={e=>setTarget(e.target.value)}>
+                  {columns.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="text-sm">Model</div>
+                <select className="bg-slate-800 rounded px-2 py-1" value={modelType} onChange={e=>setModelType(e.target.value)}>
+                  <option value="random_forest">Random Forest</option>
+                  <option value="xgboost">XGBoost</option>
+                  <option value="gaussian_process">Gaussian Process</option>
+                  <option value="mlp">Neural Net (MLP)</option>
+                  <option value="transformer">Transformer (fallback to MLP if torch not installed)</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="text-sm">Save directory (in container)</div>
+                <input className="bg-slate-800 rounded px-2 py-1" value={saveDir} onChange={e=>setSaveDir(e.target.value)} />
+              </div>
+
+              <button onClick={handleTrain} disabled={busy} className="px-3 py-1 rounded-lg bg-emerald-600 disabled:opacity-50">
+                {busy?'Training...':'Train'}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {result && (
+          <div className="p-4 border border-slate-800 rounded-2xl">
+            <div className="font-semibold mb-2">Result</div>
+            <pre className="text-sm">{JSON.stringify(result, null, 2)}</pre>
+          </div>
+        )}
       </div>
 
-      {columns.length > 0 && (
-        <>
-          <div style={{ marginTop: 12 }}>
-            <strong>Features</strong>
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-              {columns.map((c) => (
-                <label key={c} style={{ display: "inline-flex", gap: 6 }}>
-                  <input
-                    type="checkbox"
-                    checked={selected.includes(c)}
-                    onChange={(e) =>
-                      setSelected((prev) =>
-                        e.target.checked
-                          ? [...prev, c]
-                          : prev.filter((x) => x !== c)
-                      )
-                    }
-                  />
-                  {c}
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <div style={{ marginTop: 12 }}>
-            <strong>Target</strong>
-            <select value={target} onChange={(e) => setTarget(e.target.value)}>
-              <option value="">-- choose --</option>
-              {columns.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div style={{ marginTop: 12 }}>
-            <strong>Model</strong>
-            <select value={model} onChange={(e) => setModel(e.target.value)}>
-              <option>Random Forest</option>
-              <option>Linear Regression</option>
-            </select>
-          </div>
-
-          <div style={{ marginTop: 12 }}>
-            <strong>Save directory (in container)</strong>
-            <input
-              value={saveDir}
-              onChange={(e) => setSaveDir(e.target.value)}
-              style={{ width: 260 }}
-            />
-          </div>
-
-          <div style={{ marginTop: 16 }}>
-            <button onClick={onTrain} disabled={working}>
-              {working ? "Training..." : "Train"}
-            </button>
-          </div>
-        </>
-      )}
+      <div className="p-4 border border-slate-800 rounded-2xl">
+        <div className="font-semibold mb-2">Tips</div>
+        <ul className="list-disc ml-6 text-sm space-y-1 text-slate-300">
+          <li>Make sure your CSV has a single header row and numeric columns for features.</li>
+          <li>For large files, the proxy allows up to 20MB by default (tweak in nginx.conf).</li>
+          <li>Models are saved inside the <code>/app/outputs</code> folder of the ML container by default.</li>
+        </ul>
+      </div>
     </div>
-  );
+  )
 }
