@@ -1,42 +1,31 @@
+version: "3.9"
 services:
-  backend:
-    build: ./backend
-    image: petroagent-backend
-    container_name: petroagent-backend
-    ports: ["5000:5000"]
-    restart: unless-stopped
-
-  ml_service:
-    build: ./ml_service
-    image: petroagent-ml_service
-    container_name: petroagent-ml_service
-    ports: ["8000:8000"]
-    restart: unless-stopped
-
-  agent:
-    build: ./agent
-    image: petroagent-agent
-    container_name: petroagent-agent
-    depends_on:
-      - ml_service
-    environment:
-      OPENAI_API_KEY_FILE: /run/secrets/openai_key
-      OPENAI_MODEL: gpt-4.1-mini
-      ML_SERVICE_URL: http://ml_service:8000
-    secrets:
-      - openai_key
-    ports: ["7000:7000"]
-    restart: unless-stopped
-
   frontend:
     build: ./frontend
-    image: petroagent-frontend
     container_name: petroagent-frontend
+    ports:
+      - "3000:80"
     depends_on:
       - agent
-    ports: ["3000:80"]
-    restart: unless-stopped
-
-secrets:
-  openai_key:
-    file: ./api_key.txt
+      - ml_service
+      - backend
+  agent:
+    build: ./agent
+    container_name: petroagent-agent
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+    expose:
+      - "7000"
+  ml_service:
+    build: ./ml_service
+    container_name: petroagent-ml_service
+    volumes:
+      - ./ml_service/outputs:/app/outputs
+    expose:
+      - "8000"
+  backend:
+    build: ./backend
+    container_name: petroagent-backend
+    expose:
+      - "5000"
