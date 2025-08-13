@@ -50,79 +50,68 @@ export default function Trainer() {
   }
 
   return (
-    <div className="grid md:grid-cols-2 gap-6">
-      <div className="space-y-4">
-        <div className="p-4 border border-slate-800 rounded-2xl">
-          <div className="font-semibold mb-2">Train Models</div>
-          <div className="flex items-center gap-3 mb-2">
-            <input type="file" accept=".csv" onChange={e=>setFile(e.target.files?.[0]||null)} />
-            <button onClick={handleDetect} className="px-3 py-1 rounded-lg bg-slate-800">Detect columns</button>
-          </div>
-
-          {columns.length>0 && (
-            <div className="space-y-3">
-              <div>
-                <div className="text-sm mb-1">Features</div>
-                <div className="flex flex-wrap gap-2 max-h-40 overflow-auto">
-                  {columns.map(c => (
-                    <label key={c} className="text-sm flex items-center gap-1 bg-slate-800 rounded px-2 py-1">
-                      <input type="checkbox" checked={features.includes(c)} disabled={c===target}
-                        onChange={(e)=>{
-                          if (e.target.checked) setFeatures([...features, c])
-                          else setFeatures(features.filter(f=>f!==c))
-                        }} />
-                      {c}
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <div className="text-sm">Target</div>
-                <select className="bg-slate-800 rounded px-2 py-1" value={target} onChange={e=>setTarget(e.target.value)}>
-                  {columns.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <div className="text-sm">Model</div>
-                <select className="bg-slate-800 rounded px-2 py-1" value={modelType} onChange={e=>setModelType(e.target.value)}>
-                  <option value="random_forest">Random Forest</option>
-                  <option value="xgboost">XGBoost</option>
-                  <option value="gaussian_process">Gaussian Process</option>
-                  <option value="mlp">Neural Net (MLP)</option>
-                  <option value="transformer">Transformer (fallback to MLP if torch not installed)</option>
-                </select>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <div className="text-sm">Save directory (in container)</div>
-                <input className="bg-slate-800 rounded px-2 py-1" value={saveDir} onChange={e=>setSaveDir(e.target.value)} />
-              </div>
-
-              <button onClick={handleTrain} disabled={busy} className="px-3 py-1 rounded-lg bg-emerald-600 disabled:opacity-50">
-                {busy?'Training...':'Train'}
-              </button>
-            </div>
-          )}
+    <div className="space-y-4">
+      <div className="p-4 border border-slate-800 rounded-2xl">
+        <div className="font-semibold mb-2">Train Models</div>
+        <div className="flex items-center gap-3 mb-2">
+          <input type="file" accept=".csv" onChange={e=>setFile(e.target.files?.[0]||null)} />
+          <button onClick={handleDetect} className="px-3 py-1 rounded-lg bg-slate-800">Detect columns</button>
         </div>
 
-        {result && (
-          <div className="p-4 border border-slate-800 rounded-2xl">
-            <div className="font-semibold mb-2">Result</div>
-            <pre className="text-sm">{JSON.stringify(result, null, 2)}</pre>
+        {columns.length>0 && (
+          <div className="space-y-3">
+            <div>
+              <div className="text-sm mb-1">Features</div>
+              <div className="flex flex-wrap gap-2 max-h-40 overflow-auto">
+                {columns.map(c => (
+                  <label key={c} className="text-sm flex items-center gap-1 bg-slate-800 rounded px-2 py-1">
+                    <input type="checkbox" checked={features.includes(c)} disabled={c===target}
+                      onChange={(e)=>{
+                        if (e.target.checked) setFeatures([...features, c])
+                        else setFeatures(features.filter(f=>f!==c))
+                      }} />
+                    {c}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="text-sm">Target</div>
+              <select className="bg-slate-800 rounded px-2 py-1" value={target} onChange={e=>setTarget(e.target.value)}>
+                {columns.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="text-sm">Model</div>
+              <select className="bg-slate-800 rounded px-2 py-1" value={modelType} onChange={e=>setModelType(e.target.value)}>
+                <option value="random_forest">Random Forest</option>
+                <option value="xgboost">XGBoost</option>
+                <option value="gaussian_process">Gaussian Process</option>
+                <option value="mlp">Neural Net (MLP)</option>
+                <option value="transformer">Transformer (fallback to MLP if torch not installed)</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="text-sm">Save directory (in container)</div>
+              <input className="bg-slate-800 rounded px-2 py-1" value={saveDir} onChange={e=>setSaveDir(e.target.value)} />
+            </div>
+
+            <button onClick={handleTrain} disabled={busy} className="px-3 py-1 rounded-lg bg-emerald-600 disabled:opacity-50">
+              {busy?'Training...':'Train'}
+            </button>
           </div>
         )}
       </div>
 
-      <div className="p-4 border border-slate-800 rounded-2xl">
-        <div className="font-semibold mb-2">Tips</div>
-        <ul className="list-disc ml-6 text-sm space-y-1 text-slate-300">
-          <li>Make sure your CSV has a single header row and numeric columns for features.</li>
-          <li>For large files, the proxy allows up to 20MB by default (tweak in nginx.conf).</li>
-          <li>Models are saved inside the <code>/app/outputs</code> folder of the ML container by default.</li>
-        </ul>
-      </div>
+      {result && (
+        <div className="p-4 border border-slate-800 rounded-2xl">
+          <div className="font-semibold mb-2">Result</div>
+          <pre className="text-sm">{JSON.stringify(result, null, 2)}</pre>
+        </div>
+      )}
     </div>
   )
 }
