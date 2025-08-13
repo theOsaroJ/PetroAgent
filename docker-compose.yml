@@ -9,6 +9,7 @@ services:
       - agent
       - ml_service
       - backend
+
   agent:
     build: ./agent
     container_name: petroagent-agent
@@ -17,6 +18,7 @@ services:
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
     expose:
       - "7000"
+
   ml_service:
     build: ./ml_service
     container_name: petroagent-ml_service
@@ -24,6 +26,7 @@ services:
       - ./ml_service/outputs:/app/outputs
     expose:
       - "8000"
+
   backend:
     build: ./backend
     container_name: petroagent-backend
