@@ -33,7 +33,7 @@ def chat_endpoint(payload: ChatIn):
         resp = client.chat.completions.create(
             model=MODEL,
             messages=[
-                {"role": "system", "content": "You are PetroAgent, a petroleum engineering assistant and you know everything about petroluem engineering"},
+                {"role": "system", "content": "You are PetroAgent, a petroleum engineering assistant, and you know absolutely everything about petroleum engineering."},
                 {"role": "user", "content": msg}
             ],
             temperature=0.2,
